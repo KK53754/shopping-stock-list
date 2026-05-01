@@ -199,15 +199,31 @@
 
       const loadData = useCallback(async () => {
         setIsLoading(true);
+        let loaded = false;
+
+        // タイムアウト処理（5秒）
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
         if (gasUrl && token) {
           try {
-            const r = await fetch(`${gasUrl}?token=${token}`);
+            const r = await fetch(`${gasUrl}?token=${token}`, { signal: controller.signal });
             const d = await r.json();
+            clearTimeout(timeoutId);
             if (d.error) throw new Error(d.error);
             setItems(Array.isArray(d) && d.length ? d.map(migrateItem) : fromLS());
-          } catch (e) { console.error('GAS取得エラー', e); setItems(fromLS()); }
-        } else { setItems(fromLS()); }
+            loaded = true;
+          } catch (e) {
+            console.error('GAS取得失敗、ローカルデータを使用します', e);
+          }
+        }
+
+        if (!loaded) {
+          setItems(fromLS());
+        }
+        
         setIsLoading(false);
+        clearTimeout(timeoutId);
       }, [gasUrl, token, fromLS]);
 
       useEffect(() => { loadData(); }, [loadData]);
