@@ -2,12 +2,13 @@
 const CACHE = 'app-v1';
 
 // インストール時にプリキャッシュするファイル一覧
+const BASE = '/shopping-stock-list';
 const PRECACHE_URLS = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
+  BASE + '/',
+  BASE + '/index.html',
+  BASE + '/manifest.webmanifest',
+  BASE + '/icons/icon-192.png',
+  BASE + '/icons/icon-512.png',
 ];
 
 // インストール: 全ファイルをキャッシュし、即座に有効化
@@ -48,7 +49,7 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => {
           if (request.mode === 'navigate') {
-            return caches.match('/index.html');
+            return caches.match(BASE + '/index.html');
           }
         });
     })

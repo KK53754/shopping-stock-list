@@ -7,11 +7,11 @@
   <title>買い物リスト</title>
 
   <!-- PWA 設定 -->
-  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="manifest" href="/shopping-stock-list/manifest.webmanifest">
   <meta name="theme-color" content="#5A5A40">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/shopping-stock-list/icons/icon-192.png">
 
   <!-- Tailwind CSS (スタイリング用 CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -368,7 +368,7 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(console.error);
+        navigator.serviceWorker.register('/shopping-stock-list/sw.js', { scope: '/shopping-stock-list/' }).catch(console.error);
       });
     }
   </script>
