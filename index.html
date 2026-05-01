@@ -464,7 +464,8 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/shopping-stock-list/sw.js', { scope: '/shopping-stock-list/' })
+        // キャッシュ回避のためにタイムスタンプを付与
+        navigator.serviceWorker.register('/shopping-stock-list/sw.js?v=' + Date.now(), { scope: '/shopping-stock-list/' })
           .then(reg => {
             // 新しいService Workerが待機状態になったら、即座にメッセージを送ってアクティブにする
             reg.addEventListener('updatefound', () => {
