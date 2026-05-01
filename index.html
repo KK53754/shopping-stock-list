@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
   <meta charset="UTF-8" />
   <!-- スマホでの最適な表示（レスポンシブ）と、入力時の意図しないズームを防ぐ設定 -->
@@ -36,20 +37,23 @@
       font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
       -webkit-tap-highlight-color: transparent;
     }
-    
+
     /* スクロールバーを少し洗練させるスタイル */
     ::-webkit-scrollbar {
       width: 6px;
     }
+
     ::-webkit-scrollbar-track {
       background: transparent;
     }
+
     ::-webkit-scrollbar-thumb {
       background: #cbd5e1;
       border-radius: 10px;
     }
   </style>
 </head>
+
 <body class="bg-[#F5F5F0] min-h-screen text-[#4A4A40] font-sans">
   <div id="root"></div>
 
@@ -58,6 +62,18 @@
     import React, { useState, useEffect, useRef } from 'react';
     import { createRoot } from 'react-dom/client';
     import { Check, Trash2, Plus, ShoppingBag, Circle, Package, Minus, ArrowRight, ShoppingCart, Loader2 } from 'lucide-react';
+
+    // =============================================
+    // GAS API 設定（手順4でここを書き換えてください）
+    // =============================================
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbxyzCdPHg6TOnEvlAeMPh_8g1WpNSEYGFhM4R5iEMUHlASNPVVazQYaAOW7FC2B42-w/exec'; // ← GASデプロイ後のURLをここに貼る
+    const TOKEN = 'baby2026'; // ← gas/コード.gs の TOKEN と同じ値を入れる
+
+    // デフォルトアイテム（初回起動時のみ表示）
+    const DEFAULT_ITEMS = [
+      { id: generateId(), text: '牛乳', status: 'shopping', stockCount: 0 },
+      { id: generateId(), text: 'ティッシュ', status: 'stock', stockCount: 2 },
+    ];
 
     // ID生成のユーティリティ（環境によってcryptoが使えない場合へのフォールバック付き）
     const generateId = () => {
@@ -90,51 +106,44 @@
       const [items, setItems] = useState([]);
       const [isLoading, setIsLoading] = useState(true);
       const isInitialMount = useRef(true);
-      
+
       const [inputValue, setInputValue] = useState('');
       const [activeTab, setActiveTab] = useState('shopping'); // 'shopping' | 'stock'
 
-      // 初回データ読み込み (GAS または localStorage)
-      useEffect(() => {
-        if (typeof google !== 'undefined' && google.script && google.script.run) {
-           google.script.run
-             .withSuccessHandler(dataStr => {
-                try {
-                  const data = JSON.parse(dataStr);
-                  setItems(data.length > 0 ? data : [
-                    { id: generateId(), text: '牛乳', status: 'shopping', stockCount: 0 },
-                    { id: generateId(), text: 'ティッシュ', status: 'stock', stockCount: 2 },
-                  ]);
-                } catch(e) {
-                  console.error('データのパースエラー', e);
-                }
-                setIsLoading(false);
-             })
-             .withFailureHandler(err => {
-                console.error('GASデータ取得エラー', err);
-                setIsLoading(false);
-             })
-             .getData();
-        } else {
-           // GAS環境以外（ローカルプレビュー用）
-           setTimeout(() => {
-             try {
-               const saved = localStorage.getItem('shopping-list');
-               if (saved) {
-                 const migrated = migrateData(saved);
-                 if (migrated) setItems(migrated);
-               } else {
-                 setItems([
-                    { id: generateId(), text: '牛乳', status: 'shopping', stockCount: 0 },
-                    { id: generateId(), text: 'ティッシュ', status: 'stock', stockCount: 2 },
-                 ]);
-               }
-             } catch (e) {
-               console.error('データの読み込みに失敗しました', e);
-             }
-             setIsLoading(false);
-           }, 500); // ローディングをシミュレート
+      // localStorageからデータを読み込む（フォールバック用）
+      const loadFromLocalStorage = () => {
+        try {
+          const saved = localStorage.getItem('shopping-list');
+          if (saved) {
+            const migrated = migrateData(saved);
+            if (migrated) { setItems(migrated); return; }
+          }
+        } catch (e) {
+          console.error('localStorageの読み込みエラー', e);
         }
+        setItems(DEFAULT_ITEMS);
+      };
+
+      // 初回データ読み込み（GAS API → localStorageフォールバック）
+      useEffect(() => {
+        const load = async () => {
+          if (GAS_URL && TOKEN) {
+            try {
+              const res = await fetch(`${GAS_URL}?token=${TOKEN}`);
+              const data = await res.json();
+              if (data.error) throw new Error(data.error);
+              setItems(Array.isArray(data) && data.length > 0 ? data : DEFAULT_ITEMS);
+            } catch (e) {
+              console.error('GASからのデータ取得エラー。localStorageにフォールバック:', e);
+              loadFromLocalStorage();
+            }
+          } else {
+            // GAS未設定時はlocalStorageを使用
+            loadFromLocalStorage();
+          }
+          setIsLoading(false);
+        };
+        load();
       }, []);
 
       // itemsが更新されるたびに保存（デバウンス処理付きで1秒まとめる）
@@ -146,16 +155,25 @@
           return;
         }
 
-        const timerId = setTimeout(() => {
-          if (typeof google !== 'undefined' && google.script && google.script.run) {
-             google.script.run
-               .withFailureHandler(err => console.error('保存エラー', err))
-               .saveData(JSON.stringify(items));
+        const timerId = setTimeout(async () => {
+          if (GAS_URL && TOKEN) {
+            try {
+              // Content-Type: text/plain でCORSプリフライトを回避
+              await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ token: TOKEN, data: JSON.stringify(items) })
+              });
+            } catch (e) {
+              console.error('GASへの保存エラー。localStorageにフォールバック:', e);
+              localStorage.setItem('shopping-list', JSON.stringify(items));
+            }
           } else {
-             localStorage.setItem('shopping-list', JSON.stringify(items));
+            // GAS未設定時はlocalStorageに保存
+            localStorage.setItem('shopping-list', JSON.stringify(items));
           }
         }, 1000); // 1秒間操作がなければ保存
-        
+
         return () => clearTimeout(timerId);
       }, [items, isLoading]);
 
@@ -164,21 +182,21 @@
         e.preventDefault();
         const trimmed = inputValue.trim();
         if (!trimmed) return;
-        
+
         const newItem = {
           id: generateId(),
           text: trimmed,
           status: activeTab, // 現在のタブに合わせたステータス
           stockCount: activeTab === 'stock' ? 1 : 0
         };
-        
+
         setItems([newItem, ...items]);
         setInputValue('');
       };
 
       // 欠品にして買い物リストへ送る
       const markAsOutOfStock = (id) => {
-        setItems(items.map(item => 
+        setItems(items.map(item =>
           item.id === id ? { ...item, status: 'shopping', stockCount: 0 } : item
         ));
         setActiveTab('shopping'); // タブも自動で切り替え（飛んでいく挙動）
@@ -186,7 +204,7 @@
 
       // 買ったことにしてストックへ戻す
       const markAsBought = (id) => {
-        setItems(items.map(item => 
+        setItems(items.map(item =>
           item.id === id ? { ...item, status: 'stock', stockCount: Math.max(1, item.stockCount + 1) } : item
         ));
         setActiveTab('stock'); // タブも自動で切り替え（戻る挙動）
@@ -194,7 +212,7 @@
 
       // ストック数の変更
       const updateStock = (id, delta) => {
-        setItems(items.map(item => 
+        setItems(items.map(item =>
           item.id === id ? { ...item, stockCount: Math.max(0, item.stockCount + delta) } : item
         ));
       };
@@ -220,141 +238,139 @@
 
       return (
         <div className="max-w-md mx-auto p-4 pb-20">
-          
+
           {/* タブ切り替え */}
           <div className="flex bg-[#EBEBE0] p-1.5 rounded-2xl mb-6">
-            <button 
+            <button
               onClick={() => setActiveTab('shopping')}
-              className={`flex flex-1 items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-widest rounded-xl transition-all ${
-                activeTab === 'shopping' ? 'bg-white text-[#5A5A40] shadow-sm' : 'text-[#8A8A70] hover:text-[#5A5A40]'
-              }`}
+              className={`flex flex-1 items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-widest rounded-xl transition-all ${activeTab === 'shopping' ? 'bg-white text-[#5A5A40] shadow-sm' : 'text-[#8A8A70] hover:text-[#5A5A40]'
+                }`}
             >
               <ShoppingBag size={16} />
               買い物リスト {(shoppingItems.length > 0) && `(${shoppingItems.length})`}
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('stock')}
-              className={`flex flex-1 items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-widest rounded-xl transition-all ${
-                activeTab === 'stock' ? 'bg-white text-[#5A5A40] shadow-sm' : 'text-[#8A8A70] hover:text-[#5A5A40]'
-              }`}
+              className={`flex flex-1 items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-widest rounded-xl transition-all ${activeTab === 'stock' ? 'bg-white text-[#5A5A40] shadow-sm' : 'text-[#8A8A70] hover:text-[#5A5A40]'
+                }`}
             >
               <Package size={16} />
               ストックリスト
             </button>
           </div>
-          
+
           {/* ヘッダー＆入力フォーム部分 */}
           <div className="bg-white rounded-2xl shadow-sm mb-6 p-5 flex flex-col gap-5 border border-[#EBEBE0]">
-             <div className="flex items-center gap-3">
-                <div className="bg-[#F9F9F5] text-[#5A5A40] p-2.5 rounded-xl border border-[#D9D9C8]">
-                   {activeTab === 'shopping' ? <ShoppingBag size={24} strokeWidth={2.5} /> : <Package size={24} strokeWidth={2.5} />}
-                </div>
-                <h1 className="text-2xl font-serif text-[#3A3A2C] tracking-tight">
-                  {activeTab === 'shopping' ? 'お買い物リスト' : '日常品ストック'}
-                </h1>
-             </div>
+            <div className="flex items-center gap-3">
+              <div className="bg-[#F9F9F5] text-[#5A5A40] p-2.5 rounded-xl border border-[#D9D9C8]">
+                {activeTab === 'shopping' ? <ShoppingBag size={24} strokeWidth={2.5} /> : <Package size={24} strokeWidth={2.5} />}
+              </div>
+              <h1 className="text-2xl font-serif text-[#3A3A2C] tracking-tight">
+                {activeTab === 'shopping' ? 'お買い物リスト' : '日常品ストック'}
+              </h1>
+            </div>
 
-             <form onSubmit={handleAdd} className="flex gap-2">
-               <input
-                 type="text"
-                 value={inputValue}
-                 onChange={(e) => setInputValue(e.target.value)}
-                 placeholder={activeTab === 'shopping' ? "買うものを入力..." : "ストックに入力..."}
-                 className="flex-1 bg-white border-2 border-dashed border-[#D9D9C8] rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent transition-all placeholder:text-[#8A8A70] text-base placeholder:italic"
-               />
-               <button
-                 type="submit"
-                 disabled={!inputValue.trim()}
-                 className="bg-[#5A5A40] text-white rounded-xl w-12 h-12 flex flex-shrink-0 items-center justify-center hover:bg-[#4A4A30] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-               >
-                 <Plus size={24} />
-               </button>
-             </form>
+            <form onSubmit={handleAdd} className="flex gap-2">
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder={activeTab === 'shopping' ? "買うものを入力..." : "ストックに入力..."}
+                className="flex-1 bg-white border-2 border-dashed border-[#D9D9C8] rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent transition-all placeholder:text-[#8A8A70] text-base placeholder:italic"
+              />
+              <button
+                type="submit"
+                disabled={!inputValue.trim()}
+                className="bg-[#5A5A40] text-white rounded-xl w-12 h-12 flex flex-shrink-0 items-center justify-center hover:bg-[#4A4A30] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Plus size={24} />
+              </button>
+            </form>
           </div>
 
           {/* アイテム一覧 */}
           <div className="space-y-4 mb-8">
-             {activeTab === 'shopping' && shoppingItems.length === 0 && (
-                <div className="text-center text-[#8A8A70] py-12 flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-dashed border-[#D9D9C8]">
-                   <ShoppingBag size={48} className="opacity-20" />
-                   <p className="font-medium text-[#5A5A40]">買うものはありません</p>
-                   <p className="text-sm italic">ストックから「欠品」にするか、追加してください</p>
+            {activeTab === 'shopping' && shoppingItems.length === 0 && (
+              <div className="text-center text-[#8A8A70] py-12 flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-dashed border-[#D9D9C8]">
+                <ShoppingBag size={48} className="opacity-20" />
+                <p className="font-medium text-[#5A5A40]">買うものはありません</p>
+                <p className="text-sm italic">ストックから「欠品」にするか、追加してください</p>
+              </div>
+            )}
+            {activeTab === 'shopping' && shoppingItems.map((item) => (
+              <div
+                key={item.id}
+                className="group flex flex-col sm:flex-row sm:items-center gap-4 bg-white p-5 rounded-2xl shadow-sm border border-[#EBEBE0] transition-all hover:border-[#D9D9C8]"
+              >
+                <div className="flex items-center gap-4 flex-1">
+                  <button
+                    onClick={() => markAsBought(item.id)}
+                    title="買った！（ストックへ戻す）"
+                    className="text-[#D9D9C8] hover:text-[#5A5A40] transition-colors flex-shrink-0 active:scale-90"
+                  >
+                    <Circle size={28} strokeWidth={1.5} />
+                  </button>
+                  <div className="flex-1">
+                    <span className="font-medium text-[#4A4A30] leading-tight break-words">{item.text}</span>
+                    <p className="text-xs text-[#8A8A70] mt-1 space-x-2">
+                      <span className="bg-[#F9F9F5] px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-widest border border-[#EBEBE0]">要購入</span>
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => deleteItem(item.id)}
+                    className="text-[#C8C8B0] hover:text-[#8A8A70] p-2 -mr-2 rounded-lg transition-colors flex-shrink-0 active:scale-90 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-[#F5F5F0]"
+                  >
+                    <Trash2 size={20} />
+                  </button>
                 </div>
-             )}
-             {activeTab === 'shopping' && shoppingItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="group flex flex-col sm:flex-row sm:items-center gap-4 bg-white p-5 rounded-2xl shadow-sm border border-[#EBEBE0] transition-all hover:border-[#D9D9C8]"
-                >
-                   <div className="flex items-center gap-4 flex-1">
-                     <button
-                       onClick={() => markAsBought(item.id)}
-                       title="買った！（ストックへ戻す）"
-                       className="text-[#D9D9C8] hover:text-[#5A5A40] transition-colors flex-shrink-0 active:scale-90"
-                     >
-                       <Circle size={28} strokeWidth={1.5} />
-                     </button>
-                     <div className="flex-1">
-                       <span className="font-medium text-[#4A4A30] leading-tight break-words">{item.text}</span>
-                       <p className="text-xs text-[#8A8A70] mt-1 space-x-2">
-                         <span className="bg-[#F9F9F5] px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-widest border border-[#EBEBE0]">要購入</span>
-                       </p>
-                     </div>
-                     <button
-                       onClick={() => deleteItem(item.id)}
-                       className="text-[#C8C8B0] hover:text-[#8A8A70] p-2 -mr-2 rounded-lg transition-colors flex-shrink-0 active:scale-90 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-[#F5F5F0]"
-                     >
-                       <Trash2 size={20} />
-                     </button>
-                   </div>
-                </div>
-             ))}
+              </div>
+            ))}
 
-             {activeTab === 'stock' && stockItems.length === 0 && (
-                <div className="text-center text-[#8A8A70] py-12 flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-dashed border-[#D9D9C8]">
-                   <Package size={48} className="opacity-20" />
-                   <p className="font-medium text-[#5A5A40]">ストックは空です</p>
-                   <p className="text-sm italic">家にある日常品を追加してください</p>
-                </div>
-             )}
-             {activeTab === 'stock' && stockItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="group flex flex-col sm:flex-row sm:items-center gap-4 bg-white p-5 rounded-2xl shadow-sm border border-[#EBEBE0] transition-all hover:border-[#D9D9C8]"
-                >
-                  <div className="flex-1 flex items-center justify-between sm:justify-start gap-4">
-                    <div className="flex-1">
-                      <p className="font-medium text-[#4A4A30] leading-tight break-words">{item.text}</p>
-                      <div className="flex items-center gap-3 mt-3">
-                        <div className="flex items-center bg-[#F9F9F5] border border-[#D9D9C8] rounded-lg overflow-hidden">
-                          <button onClick={() => updateStock(item.id, -1)} className="px-3 py-1.5 text-[#8A8A70] hover:bg-[#EBEBE0] active:bg-[#D9D9C8] transition-colors"><Minus size={14} /></button>
-                          <span className="text-sm font-bold text-[#5A5A40] w-8 text-center">{item.stockCount}</span>
-                          <button onClick={() => updateStock(item.id, 1)} className="px-3 py-1.5 text-[#8A8A70] hover:bg-[#EBEBE0] active:bg-[#D9D9C8] transition-colors"><Plus size={14} /></button>
-                        </div>
-                        <span className="text-[10px] uppercase font-bold tracking-widest text-[#8A8A70]">Stock</span>
+            {activeTab === 'stock' && stockItems.length === 0 && (
+              <div className="text-center text-[#8A8A70] py-12 flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-dashed border-[#D9D9C8]">
+                <Package size={48} className="opacity-20" />
+                <p className="font-medium text-[#5A5A40]">ストックは空です</p>
+                <p className="text-sm italic">家にある日常品を追加してください</p>
+              </div>
+            )}
+            {activeTab === 'stock' && stockItems.map((item) => (
+              <div
+                key={item.id}
+                className="group flex flex-col sm:flex-row sm:items-center gap-4 bg-white p-5 rounded-2xl shadow-sm border border-[#EBEBE0] transition-all hover:border-[#D9D9C8]"
+              >
+                <div className="flex-1 flex items-center justify-between sm:justify-start gap-4">
+                  <div className="flex-1">
+                    <p className="font-medium text-[#4A4A30] leading-tight break-words">{item.text}</p>
+                    <div className="flex items-center gap-3 mt-3">
+                      <div className="flex items-center bg-[#F9F9F5] border border-[#D9D9C8] rounded-lg overflow-hidden">
+                        <button onClick={() => updateStock(item.id, -1)} className="px-3 py-1.5 text-[#8A8A70] hover:bg-[#EBEBE0] active:bg-[#D9D9C8] transition-colors"><Minus size={14} /></button>
+                        <span className="text-sm font-bold text-[#5A5A40] w-8 text-center">{item.stockCount}</span>
+                        <button onClick={() => updateStock(item.id, 1)} className="px-3 py-1.5 text-[#8A8A70] hover:bg-[#EBEBE0] active:bg-[#D9D9C8] transition-colors"><Plus size={14} /></button>
                       </div>
+                      <span className="text-[10px] uppercase font-bold tracking-widest text-[#8A8A70]">Stock</span>
                     </div>
-                    
-                    <button
-                      onClick={() => deleteItem(item.id)}
-                      className="text-[#C8C8B0] hover:text-[#8A8A70] p-2 rounded-lg transition-colors flex-shrink-0 active:scale-90 bg-[#F5F5F0] opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-[#EBEBE0]"
-                    >
-                      <Trash2 size={20} />
-                    </button>
                   </div>
 
-                  <div className="border-t border-[#EBEBE0] sm:border-t-0 sm:border-l pt-3 sm:pt-0 sm:pl-4 mt-1 sm:mt-0 flex justify-end">
-                      <button
-                        onClick={() => markAsOutOfStock(item.id)}
-                        className="flex items-center gap-2 bg-white text-[#5A5A40] px-4 py-2.5 rounded-xl border-2 border-[#EBEBE0] hover:border-[#5A5A40] hover:bg-[#F9F9F5] active:scale-95 transition-all text-xs font-bold tracking-widest flex-shrink-0"
-                      >
-                        <ShoppingCart size={16} />
-                        <span>欠品・買う</span>
-                        <ArrowRight size={14} className="opacity-40" />
-                      </button>
-                  </div>
+                  <button
+                    onClick={() => deleteItem(item.id)}
+                    className="text-[#C8C8B0] hover:text-[#8A8A70] p-2 rounded-lg transition-colors flex-shrink-0 active:scale-90 bg-[#F5F5F0] opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-[#EBEBE0]"
+                  >
+                    <Trash2 size={20} />
+                  </button>
                 </div>
-             ))}
+
+                <div className="border-t border-[#EBEBE0] sm:border-t-0 sm:border-l pt-3 sm:pt-0 sm:pl-4 mt-1 sm:mt-0 flex justify-end">
+                  <button
+                    onClick={() => markAsOutOfStock(item.id)}
+                    className="flex items-center gap-2 bg-white text-[#5A5A40] px-4 py-2.5 rounded-xl border-2 border-[#EBEBE0] hover:border-[#5A5A40] hover:bg-[#F9F9F5] active:scale-95 transition-all text-xs font-bold tracking-widest flex-shrink-0"
+                  >
+                    <ShoppingCart size={16} />
+                    <span>欠品・買う</span>
+                    <ArrowRight size={14} className="opacity-40" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       );
@@ -373,4 +389,5 @@
     }
   </script>
 </body>
+
 </html>
