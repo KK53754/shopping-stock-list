@@ -8,13 +8,13 @@
   "theme_color": "#5A5A40",
   "icons": [
     {
-      "src": "/shopping-stock-list/icons/icon-192.png",
+      "src": "/shopping-stock-list/icons/icon-192v2.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/shopping-stock-list/icons/icon-512.png",
+      "src": "/shopping-stock-list/icons/icon-512v2.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
