@@ -1,0 +1,56 @@
+// キャッシュ名（バージョンを変えると古いキャッシュが削除される）
+const CACHE = 'app-v1';
+
+// インストール時にプリキャッシュするファイル一覧
+const PRECACHE_URLS = [
+  '/',
+  '/index.html',
+  '/manifest.webmanifest',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+];
+
+// インストール: 全ファイルをキャッシュし、即座に有効化
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE_URLS))
+  );
+  self.skipWaiting();
+});
+
+// アクティベート: 古いキャッシュを削除し、すぐに制御を開始
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))
+      )
+    )
+  );
+  self.clients.claim();
+});
+
+// フェッチ: 同一オリジンGETのみキャッシュファースト / オフライン時は /index.html にフォールバック
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (request.method !== 'GET' || !request.url.startsWith(self.location.origin)) return;
+
+  event.respondWith(
+    caches.match(request).then((cached) => {
+      if (cached) return cached;
+      return fetch(request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const cloned = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(request, cloned));
+          }
+          return response;
+        })
+        .catch(() => {
+          if (request.mode === 'navigate') {
+            return caches.match('/index.html');
+          }
+        });
+    })
+  );
+});
