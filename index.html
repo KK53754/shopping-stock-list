@@ -331,17 +331,20 @@
 
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/shopping-stock-list/sw.js?v=' + Date.now(), { scope: '/shopping-stock-list/' })
+        // 開発中やデバッグ時以外はタイムスタンプを外すか、固定値にするのが安全
+        navigator.serviceWorker.register('/shopping-stock-list/sw.js')
           .then(reg => {
             reg.addEventListener('updatefound', () => {
               const newWorker = reg.installing;
               newWorker.addEventListener('statechange', () => {
-                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) window.location.reload();
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // 更新通知などを出すのがベストですが、一旦リロードで対応
+                  console.log('New content available; please refresh.');
+                }
               });
             });
           });
       });
-      navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
     }
   </script>
 </body>
