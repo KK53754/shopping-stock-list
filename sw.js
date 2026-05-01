@@ -1,5 +1,5 @@
 // キャッシュ名（バージョンを変えると古いキャッシュが削除される）
-const CACHE = 'app-v8';
+const CACHE = 'app-v9';
 
 // インストール時にプリキャッシュするファイル一覧
 const BASE = '/shopping-stock-list';

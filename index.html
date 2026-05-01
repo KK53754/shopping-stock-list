@@ -464,7 +464,29 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/shopping-stock-list/sw.js', { scope: '/shopping-stock-list/' }).catch(console.error);
+        navigator.serviceWorker.register('/shopping-stock-list/sw.js', { scope: '/shopping-stock-list/' })
+          .then(reg => {
+            // 新しいService Workerが待機状態になったら、即座にメッセージを送ってアクティブにする
+            reg.addEventListener('updatefound', () => {
+              const newWorker = reg.installing;
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // 更新がある場合は自動リロード
+                  window.location.reload();
+                }
+              });
+            });
+          })
+          .catch(console.error);
+      });
+
+      // コントローラーが変わった（新しいSWが制御を開始した）らリロード
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          window.location.reload();
+          refreshing = true;
+        }
       });
     }
   </script>
