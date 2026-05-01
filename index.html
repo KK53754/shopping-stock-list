@@ -3,7 +3,8 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <!-- FIX-PWA: user-scalable=yes に変更、maximum-scale 削除 → iOS PWA でキーボード表示を阻害しない -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>買い物リスト</title>
   <link rel="manifest" href="/shopping-stock-list/manifest.webmanifest">
   <meta name="theme-color" content="#5A5A40">
@@ -12,7 +13,8 @@
   <link rel="apple-touch-icon" href="/shopping-stock-list/icons/icon-192v2.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script type="importmap">{"imports":{"react":"https://esm.sh/react@18.2.0","react-dom/client":"https://esm.sh/react-dom@18.2.0/client","lucide-react":"https://esm.sh/lucide-react@0.344.0?external=react,react-dom"}}</script>
+  <script
+    type="importmap">{"imports":{"react":"https://esm.sh/react@18.2.0","react-dom/client":"https://esm.sh/react-dom@18.2.0/client","lucide-react":"https://esm.sh/lucide-react@0.344.0?external=react,react-dom"}}</script>
   <style>
     body {
       font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
@@ -20,31 +22,101 @@
       overscroll-behavior-y: contain;
       overflow-x: hidden;
     }
-    ::-webkit-scrollbar { width: 6px }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px }
-    @keyframes spin { to { transform: rotate(360deg) } }
-    .spin { animation: spin 1s linear infinite }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px) } to { opacity: 1; transform: translateY(0) } }
-    .fade-in { animation: fadeIn .2s ease-out }
-    /* FIX: slideUp キーフレーム追加（設定モーダル用） */
-    @keyframes slideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }
-    .ptr-indicator { transition: height .15s ease }
-    .view-container { display: flex; width: 200%; will-change: transform; transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-    .view-pane { width: 50%; flex-shrink: 0; overflow-y: auto; }
-    /* CDN読み込み中のインラインスタイル */
-    #loading-fallback {
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      min-height: 80vh; color: #8A8A70;
+
+    /* FIX-PWA: input/textarea/select に対して明示的に user-select と touch-action を設定 */
+    input,
+    textarea,
+    select,
+    [contenteditable="true"] {
+      -webkit-user-select: text !important;
+      user-select: text !important;
+      touch-action: manipulation !important;
     }
+
+    ::-webkit-scrollbar {
+      width: 6px
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 10px
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+
+    .spin {
+      animation: spin 1s linear infinite
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-6px)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0)
+      }
+    }
+
+    .fade-in {
+      animation: fadeIn .2s ease-out
+    }
+
+    @keyframes slideUp {
+      from {
+        transform: translateY(100%)
+      }
+
+      to {
+        transform: translateY(0)
+      }
+    }
+
+    .ptr-indicator {
+      transition: height .15s ease
+    }
+
+    .view-container {
+      display: flex;
+      width: 200%;
+      will-change: transform;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .view-pane {
+      width: 50%;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+
+    #loading-fallback {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 80vh;
+      color: #8A8A70;
+    }
+
     #loading-fallback .fb-spinner {
-      width: 32px; height: 32px; border: 3px solid #D9D9C8; border-top-color: #5A5A40;
-      border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 12px;
+      width: 32px;
+      height: 32px;
+      border: 3px solid #D9D9C8;
+      border-top-color: #5A5A40;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 12px;
     }
   </style>
 </head>
 
 <body class="bg-[#F5F5F0] min-h-screen text-[#4A4A40]">
-  <!-- FIX: CDN読み込み完了前に表示するフォールバックUI -->
   <div id="root">
     <div id="loading-fallback">
       <div class="fb-spinner"></div>
@@ -52,7 +124,6 @@
     </div>
   </div>
 
-  <!-- FIX: CDN/Babel読み込みタイムアウト検知（12秒） -->
   <script>
     window.__appReady = false;
     window.__appTimeout = setTimeout(function () {
@@ -97,6 +168,33 @@
       { id: 'other', label: '📦 その他' },
     ];
 
+    /* FIX-PWA: インタラクティブ要素かどうかを判定するヘルパー */
+    const INTERACTIVE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'LABEL']);
+    const isInteractiveElement = (el) => {
+      if (!el) return false;
+      // 対象要素自体 or 3階層上まで探索（ボタン内のアイコンSVG等も考慮）
+      let node = el;
+      for (let i = 0; i < 4 && node; i++) {
+        if (INTERACTIVE_TAGS.has(node.tagName)) return true;
+        if (node.getAttribute?.('role') === 'button') return true;
+        if (node.contentEditable === 'true') return true;
+        node = node.parentElement;
+      }
+      return false;
+    };
+
+    /* FIX-PWA: input/textarea 要素かどうかだけを判定（キーボード表示に関わる） */
+    const isTextInputElement = (el) => {
+      if (!el) return false;
+      const tag = el.tagName;
+      if (tag === 'TEXTAREA') return true;
+      if (tag === 'INPUT') {
+        const type = (el.type || '').toLowerCase();
+        return !['checkbox', 'radio', 'submit', 'button', 'reset', 'file', 'image', 'range', 'color'].includes(type);
+      }
+      return el.contentEditable === 'true';
+    };
+
     /* ================================================================
        ユーティリティ
        ================================================================ */
@@ -112,7 +210,7 @@
     const loadSettings = () => {
       const s = localStorage.getItem(LS_KEY_SETTINGS);
       return s ? safeJsonParse(s, { gasUrl: DEFAULT_GAS_URL, token: DEFAULT_TOKEN })
-               : { gasUrl: DEFAULT_GAS_URL, token: DEFAULT_TOKEN };
+        : { gasUrl: DEFAULT_GAS_URL, token: DEFAULT_TOKEN };
     };
 
     const migrateItem = (item) => ({
@@ -137,7 +235,6 @@
       catch (e) { console.warn('LS保存失敗:', e); }
     };
 
-    // FIX: AbortController をクリーンに管理する fetch ラッパー
     const fetchWithTimeout = async (url, options = {}, timeoutMs = GAS_TIMEOUT_MS) => {
       const controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), timeoutMs);
@@ -153,13 +250,13 @@
         if ('serviceWorker' in navigator && Notification.permission === 'granted') {
           navigator.serviceWorker.ready
             .then(reg => reg.showNotification(title, { body, icon: '/shopping-stock-list/icons/icon-192v2.png' }))
-            .catch(() => {});
+            .catch(() => { });
         }
-      } catch { /* 通知失敗は無視 */ }
+      } catch { }
     };
 
     /* ================================================================
-       ErrorBoundary — あらゆるレンダリングエラーをキャッチ
+       ErrorBoundary
        ================================================================ */
     class ErrorBoundary extends Component {
       constructor(props) { super(props); this.state = { hasError: false, error: null }; }
@@ -190,7 +287,7 @@
       return (
         <div className="fixed inset-0 z-50 flex items-end bg-black/30" onClick={onClose}>
           <div className="w-full max-w-md mx-auto bg-white rounded-t-3xl p-6 shadow-2xl"
-               onClick={e => e.stopPropagation()} style={{ animation: 'slideUp 0.25s ease-out' }}>
+            onClick={e => e.stopPropagation()} style={{ animation: 'slideUp 0.25s ease-out' }}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="font-bold text-[#3A3A2C] text-lg">⚙️ 接続設定</h2>
               <button onClick={onClose} className="text-[#8A8A70] p-1"><X size={20} /></button>
@@ -214,19 +311,39 @@
 
     function SyncIcon({ status, connected }) {
       if (status === 'saving') return <Loader2 size={14} className="spin text-[#8A8A70]" />;
-      if (status === 'saved')  return <Check size={14} className="text-green-500" />;
-      if (status === 'error')  return <CloudOff size={14} className="text-red-400" />;
+      if (status === 'saved') return <Check size={14} className="text-green-500" />;
+      if (status === 'error') return <CloudOff size={14} className="text-red-400" />;
       return connected
         ? <Cloud size={14} className="text-[#C8C8B0]" />
         : <CloudOff size={14} className="text-[#C8C8B0]" />;
     }
 
     function AddForm({ inputValue, setInputValue, selCat, setSelCat, onSubmit, placeholder }) {
+      /* FIX-PWA: iOS PWA standalone でキーボードが出ない場合の保険 —
+         onTouchEnd で明示的に focus() を呼ぶ。click イベント内なので iOS が許可する */
+      const inputRef = useRef(null);
+      const handleInputTouchEnd = useCallback((e) => {
+        // iOS PWA standalone モードの場合のみ明示的に focus
+        if (window.navigator.standalone && inputRef.current) {
+          // 少し遅延させて iOS の内部処理と競合しないようにする
+          setTimeout(() => {
+            if (inputRef.current) inputRef.current.focus();
+          }, 0);
+        }
+      }, []);
+
       return (
         <div className="bg-white rounded-2xl border border-[#EBEBE0] shadow-sm p-4 mb-4">
           <form onSubmit={onSubmit} className="flex gap-2 mb-2">
-            <input value={inputValue} onChange={e => setInputValue(e.target.value)} placeholder={placeholder}
-              className="flex-1 border-2 border-dashed border-[#D9D9C8] rounded-xl px-3 py-2.5 text-sm focus:outline-none" />
+            <input
+              ref={inputRef}
+              value={inputValue}
+              onChange={e => setInputValue(e.target.value)}
+              onTouchEnd={handleInputTouchEnd}
+              placeholder={placeholder}
+              className="flex-1 border-2 border-dashed border-[#D9D9C8] rounded-xl px-3 py-2.5 text-sm focus:outline-none"
+              style={{ fontSize: '16px' }} /* FIX-PWA: 16px未満だとiOSがズーム→フォーカス不安定 */
+            />
             <button type="submit"
               className="bg-[#5A5A40] text-white rounded-xl w-11 h-11 flex items-center justify-center active:scale-95 flex-shrink-0">
               <Plus size={22} />
@@ -248,32 +365,32 @@
        App 本体
        ================================================================ */
     function App() {
-      /* ---- State（フック規則: すべて先頭に集約、条件分岐前に配置） ---- */
-      const [settings, setSettings]       = useState(loadSettings);
-      const [items, setItems]             = useState([]);
-      const [isLoading, setIsLoading]     = useState(true);
-      const [syncStatus, setSyncStatus]   = useState('idle');
-      const [activeTab, setActiveTab]     = useState('shopping');
-      const [inputValue, setInputValue]   = useState('');
-      const [selCat, setSelCat]           = useState('other');
+      const [settings, setSettings] = useState(loadSettings);
+      const [items, setItems] = useState([]);
+      const [isLoading, setIsLoading] = useState(true);
+      const [syncStatus, setSyncStatus] = useState('idle');
+      const [activeTab, setActiveTab] = useState('shopping');
+      const [inputValue, setInputValue] = useState('');
+      const [selCat, setSelCat] = useState('other');
       const [showSettings, setShowSettings] = useState(false);
-      const [collapsed, setCollapsed]     = useState({});
-      const [search, setSearch]           = useState('');
-      const [pullY, setPullY]             = useState(0);
-      const [refreshing, setRefreshing]   = useState(false);
+      const [collapsed, setCollapsed] = useState({});
+      const [search, setSearch] = useState('');
+      const [pullY, setPullY] = useState(0);
+      const [refreshing, setRefreshing] = useState(false);
 
-      /* ---- Refs ---- */
-      const isInitSave   = useRef(true);
-      const touchStartY  = useRef(0);
-      const touchStartX  = useRef(0);
-      const swipeDir     = useRef(null);
+      const isInitSave = useRef(true);
+      const touchStartY = useRef(0);
+      const touchStartX = useRef(0);
+      const swipeDir = useRef(null);
       const containerRef = useRef(null);
       const saveTimerRef = useRef(null);
+      /* FIX-PWA: タッチ開始時の対象要素を記録 */
+      const touchTargetRef = useRef(null);
 
       const { gasUrl, token } = settings;
       const isConnected = Boolean(gasUrl && token);
 
-      /* ---- データ読み込み（GAS → LS フォールバック） ---- */
+      /* ---- データ読み込み ---- */
       const loadData = useCallback(async () => {
         setIsLoading(true);
         let loaded = false;
@@ -285,27 +402,23 @@
             if (Array.isArray(data) && data.length) {
               const migrated = data.map(migrateItem);
               setItems(migrated);
-              saveToLS(migrated); // FIX: ローカルにもバックアップ
+              saveToLS(migrated);
               loaded = true;
             }
-          } catch (e) { console.warn('GAS通信失敗、ローカルにフォールバック:', e.message); }
+          } catch (e) { console.warn('GAS通信失敗:', e.message); }
         }
         if (!loaded) setItems(loadFromLS());
         setIsLoading(false);
       }, [gasUrl, token, isConnected]);
 
-      /* ---- 初回読み込み ---- */
       useEffect(() => { loadData(); }, [loadData]);
 
-      /* ---- 自動保存（LS即時 + GASデバウンス） ---- */
+      /* ---- 自動保存 ---- */
       useEffect(() => {
         if (isLoading) return;
         if (isInitSave.current) { isInitSave.current = false; return; }
-
-        // FIX: ローカルには即座に保存（通信失敗時のデータ保護）
         saveToLS(items);
         setSyncStatus('saving');
-
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         saveTimerRef.current = setTimeout(async () => {
           if (isConnected) {
@@ -325,11 +438,10 @@
           }
           setTimeout(() => setSyncStatus('idle'), 2000);
         }, SAVE_DEBOUNCE_MS);
-
         return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-      }, [items, isLoading, gasUrl, token, isConnected]); // FIX: 依存配列を正しく指定
+      }, [items, isLoading, gasUrl, token, isConnected]);
 
-      /* ---- タブ切り替え時のコンテナ位置補正 ---- */
+      /* ---- タブ切り替え ---- */
       useEffect(() => {
         if (containerRef.current) {
           containerRef.current.style.transition = 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)';
@@ -337,13 +449,26 @@
         }
       }, [activeTab]);
 
-      /* ---- 通知許可リクエスト ---- */
+      /* ---- 通知許可 ---- */
       useEffect(() => {
-        try { if (Notification.permission === 'default') Notification.requestPermission(); } catch {}
+        try { if (Notification.permission === 'default') Notification.requestPermission(); } catch { }
       }, []);
 
-      /* ---- タッチ操作（useCallback で安定化） ---- */
+      /* ================================================================
+         FIX-PWA: タッチハンドラ — input/textarea タップ時はスワイプ判定を完全スキップ
+         iOS PWA standalone では touchstart でスワイプ処理を始めると
+         click イベントが発火せず、キーボードが表示されない
+         ================================================================ */
       const onTouchStart = useCallback((e) => {
+        const target = e.target;
+        touchTargetRef.current = target;
+
+        // FIX-PWA: テキスト入力要素へのタッチはスワイプ処理に入らない
+        if (isInteractiveElement(target)) {
+          swipeDir.current = 'none'; // スワイプ無効化フラグ
+          return;
+        }
+
         touchStartY.current = e.touches[0].clientY;
         touchStartX.current = e.touches[0].clientX;
         swipeDir.current = null;
@@ -351,6 +476,9 @@
       }, []);
 
       const onTouchMove = useCallback((e) => {
+        // FIX-PWA: インタラクティブ要素タップ時はスワイプ処理しない
+        if (swipeDir.current === 'none') return;
+
         const dx = e.touches[0].clientX - touchStartX.current;
         const dy = e.touches[0].clientY - touchStartY.current;
         if (!swipeDir.current) {
@@ -370,6 +498,13 @@
       }, [activeTab]);
 
       const onTouchEnd = useCallback(async (e) => {
+        // FIX-PWA: インタラクティブ要素タップ時はスワイプ処理しない
+        if (swipeDir.current === 'none') {
+          swipeDir.current = null;
+          touchTargetRef.current = null;
+          return;
+        }
+
         const dx = e.changedTouches[0].clientX - touchStartX.current;
         if (containerRef.current) {
           containerRef.current.style.transition = 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)';
@@ -391,9 +526,10 @@
         }
         setPullY(0);
         swipeDir.current = null;
+        touchTargetRef.current = null;
       }, [activeTab, pullY, loadData]);
 
-      /* ---- アクション（FIX: 関数型 setItems で stale state 防止） ---- */
+      /* ---- アクション ---- */
       const handleAdd = useCallback((e) => {
         e.preventDefault();
         const t = inputValue.trim();
@@ -434,18 +570,16 @@
         setCollapsed(p => ({ ...p, [id]: !p[id] }));
       }, []);
 
-      // FIX: saveSettings を正しく定義
       const saveSettings = useCallback((newSettings) => {
-        try { localStorage.setItem(LS_KEY_SETTINGS, JSON.stringify(newSettings)); } catch {}
+        try { localStorage.setItem(LS_KEY_SETTINGS, JSON.stringify(newSettings)); } catch { }
         setSettings(newSettings);
         setShowSettings(false);
-        isInitSave.current = true; // 設定変更後の初回保存スキップ（GASから再読み込みするため）
+        isInitSave.current = true;
       }, []);
 
-      /* ---- 派生データ（メモ化） ---- */
       const shoppingCount = useMemo(() => items.filter(i => i.status === 'shopping').length, [items]);
 
-      /* ---- ローディング画面（全フックの後に配置） ---- */
+      /* ---- ローディング ---- */
       if (isLoading) {
         return (
           <div className="flex flex-col items-center justify-center min-h-[80vh] text-[#8A8A70]">
@@ -516,13 +650,11 @@
         <div className="max-w-md mx-auto min-h-screen flex flex-col"
           onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
 
-          {/* Pull-to-Refresh */}
           <div className="ptr-indicator flex items-center justify-center bg-[#F5F5F0] overflow-hidden"
             style={{ height: pullY > 0 ? Math.min(pullY * 0.6, 54) : refreshing ? 48 : 0 }}>
             {(pullY > 0 || refreshing) && <RotateCcw size={20} className="text-[#5A5A40] spin" />}
           </div>
 
-          {/* ヘッダー */}
           <div className="sticky top-0 z-20 bg-[#F5F5F0]/95 backdrop-blur-sm px-4 pt-4 pb-2">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -535,7 +667,6 @@
               </button>
             </div>
 
-            {/* タブ */}
             <div className="flex bg-[#EBEBE0] p-1.5 rounded-2xl mb-3">
               {['shopping', 'stock'].map(t => (
                 <button key={t} onClick={() => setActiveTab(t)}
@@ -548,11 +679,12 @@
               ))}
             </div>
 
-            {/* 検索 */}
             <div className="relative mb-2">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A8A70]" />
+              {/* FIX-PWA: 検索欄にも fontSize:16px + touch-action 指定 */}
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="検索..."
-                className="w-full bg-white border border-[#EBEBE0] rounded-xl pl-8 pr-8 py-2 text-sm focus:outline-none" />
+                className="w-full bg-white border border-[#EBEBE0] rounded-xl pl-8 pr-8 py-2 text-sm focus:outline-none"
+                style={{ fontSize: '16px' }} />
               {search && (
                 <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8A8A70]">
                   <X size={14} />
@@ -561,7 +693,6 @@
             </div>
           </div>
 
-          {/* メインコンテンツ（スワイプ対応） */}
           <div className="flex-1 relative overflow-hidden">
             <div ref={containerRef} className="view-container"
               style={{ transform: `translateX(${activeTab === 'shopping' ? 0 : -50}%)` }}>
@@ -578,7 +709,6 @@
             </div>
           </div>
 
-          {/* 設定モーダル */}
           {showSettings && (
             <SettingsModal settings={settings} onSave={saveSettings} onClose={() => setShowSettings(false)} />
           )}
@@ -587,7 +717,7 @@
     }
 
     /* ================================================================
-       マウント & Service Worker 登録
+       マウント & Service Worker
        ================================================================ */
     window.__appReady = true;
     clearTimeout(window.__appTimeout);
@@ -596,24 +726,18 @@
       <ErrorBoundary><App /></ErrorBoundary>
     );
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/shopping-stock-list/sw.js').catch(e => console.warn('SW登録失敗:', e));
-  });
-  // ★ SW更新時に自動リロード
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!window.__swReloading) {
-      window.__swReloading = true;
-      location.reload();
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/shopping-stock-list/sw.js').catch(e => console.warn('SW登録失敗:', e));
+      });
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!window.__swReloading) { window.__swReloading = true; location.reload(); }
+      });
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'SW_UPDATED') console.log('[App] SW updated to:', event.data.version);
+      });
     }
-  });
-  // ★ SW からの更新通知を受信（ログ用）
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    if (event.data?.type === 'SW_UPDATED') {
-      console.log('[App] SW updated to:', event.data.version);
-    }
-  });
-}  
-</script>
+  </script>
 </body>
+
 </html>
