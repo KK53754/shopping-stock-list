@@ -1,5 +1,5 @@
 // キャッシュ名（バージョンを変えると古いキャッシュが削除される）
-const CACHE = 'app-v7';
+const CACHE = 'app-v8';
 
 // インストール時にプリキャッシュするファイル一覧
 const BASE = '/shopping-stock-list';
@@ -52,6 +52,21 @@ self.addEventListener('fetch', (event) => {
             return caches.match(BASE + '/index.html');
           }
         });
+    })
+  );
+});
+
+// 通知クリック時: アプリを前面に表示
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes('/shopping-stock-list') && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      return clients.openWindow('/shopping-stock-list/');
     })
   );
 });
